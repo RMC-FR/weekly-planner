@@ -64,7 +64,7 @@
   .strip::-webkit-scrollbar-thumb { background: var(--line); border-radius: 8px; }
 
   .card {
-    flex: 0 0 210px; width: 210px; background: var(--surface);
+    flex: 0 0 236px; width: 236px; background: var(--surface);
     border: 1px solid var(--line); border-radius: 12px; box-shadow: var(--shadow);
     padding: 10px 12px 8px; scroll-snap-align: start; position: relative;
     border-top: 3px solid var(--accent, var(--line));
@@ -89,8 +89,37 @@
   .bar > i { display: block; height: 100%; width: 0; background: var(--accent, var(--check)); border-radius: 5px; transition: width .25s; }
   .pmeta { display: flex; justify-content: space-between; color: var(--muted); font-size: 11px; margin-top: 3px; }
 
-  ul.items { list-style: none; margin: 6px 0 0; padding: 0; }
-  ul.items li { display: flex; align-items: center; gap: 7px; padding: 2px 0; }
+  ul.items { list-style: none; margin: 6px 0 0 -10px; padding: 0; min-height: 6px; }
+  ul.items li { display: flex; align-items: center; gap: 6px; padding: 2px 0; border-radius: 6px; }
+  .handle {
+    flex: 0 0 auto; width: 12px; height: 20px; display: grid; place-items: center;
+    color: var(--muted); cursor: grab; opacity: 0; touch-action: none; user-select: none;
+    font-size: 11px; letter-spacing: -2px; line-height: 1;
+  }
+  ul.items li:hover .handle, ul.items li:focus-within .handle { opacity: .7; }
+  .handle:hover { opacity: 1 !important; }
+  @media (hover: none) { .handle { opacity: .45; } }
+  li.placeholder { height: 24px; background: var(--surface-2); border: 1px dashed var(--line); }
+  li.drag-ghost {
+    position: fixed; z-index: 1000; pointer-events: none; background: var(--surface);
+    box-shadow: 0 6px 18px rgba(0,0,0,.14); padding: 3px 8px; opacity: .95;
+  }
+  body.dragging, body.dragging * { cursor: grabbing !important; user-select: none; }
+  .card.drop-target { outline: 2px solid var(--this); outline-offset: -1px; }
+  .due {
+    flex: 0 0 auto; appearance: none; -webkit-appearance: none; border: 0; outline: none;
+    font: inherit; font-size: 11.5px; font-weight: 500; color: var(--muted);
+    background: transparent; border-radius: 5px; padding: 2px 5px; width: 38px; text-align: center;
+    text-align-last: center; cursor: pointer;
+  }
+  .due:hover { background: var(--surface-2); }
+  .due.empty { color: transparent; }
+  ul.items li:hover .due.empty, .due.empty:focus { color: var(--muted); }
+  .due.set { background: var(--surface-2); color: var(--text); }
+  .due.today { background: #e6efff; color: var(--this); }
+  .due.overdue { background: #fbe9e7; color: var(--danger); }
+  li.done .due.set { background: transparent; color: var(--muted); }
+  @media (hover: none) { .due.empty { color: var(--line); } }
   ul.items input[type=checkbox] {
     appearance: none; -webkit-appearance: none; margin: 0; flex: 0 0 auto;
     width: 16px; height: 16px; border: 1.5px solid var(--muted); border-radius: 4px;
@@ -128,7 +157,7 @@
     .week-head { padding: 0 16px 8px; }
     .strip { padding: 2px 16px 12px; }
     .divider { margin: 6px 16px; }
-    .card { flex-basis: 190px; width: 190px; }
+    .card { flex-basis: 220px; width: 220px; }
   }
 </style>
 </head>
@@ -220,6 +249,9 @@
     $('#today').textContent = `Today ${dmy(new Date())} · weeks start on Monday`;
     $('#btnHistory').classList.toggle('active', showHistory);
     const main = $('#main');
+    const scrolls = {};
+    main.querySelectorAll('section.week').forEach(s => { scrolls[s.dataset.week] = $('.strip', s).scrollLeft; });
+    const pageY = window.scrollY;
     main.innerHTML = '';
     for (const w of weeks) main.appendChild(renderWeek(w, false));
     if (showHistory) {
@@ -239,6 +271,8 @@
     }
     refreshTopicList();
     refreshProgress();
+    main.querySelectorAll('section.week').forEach(s => { if (scrolls[s.dataset.week]) $('.strip', s).scrollLeft = scrolls[s.dataset.week]; });
+    window.scrollTo(0, pageY);
   }
 
   function renderWeek(w, isHistory) {
@@ -312,39 +346,164 @@
     return el;
   }
 
+  // ---------- due day (optional) ----------
+  const DAYS = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
+  function dueState(weekKey, due, done) {
+    const i = DAYS.indexOf(due);
+    if (i < 0) return 'empty';
+    if (done) return 'set';
+    const d = iso(addDays(parseIso(weekKey), i)), t = iso(new Date());
+    if (d === t) return 'today';
+    if (d < t) return 'overdue';
+    return 'set';
+  }
+  function paintDue(sel, li) {
+    const c = cardOfItem(li.dataset.id);
+    const it = c && c.items.find(x => x.id === li.dataset.id);
+    if (!it) return;
+    sel.className = 'due ' + dueState(c.week, it.due || '', it.done);
+  }
+  const cardOfItem = id => state.cards.find(c => c.items.some(i => i.id === id));
+
   function renderItem(c, it, cardEl) {
     const li = document.createElement('li');
     li.dataset.id = it.id;
     li.classList.toggle('done', it.done);
-    li.innerHTML = `<input type="checkbox" aria-label="Done"><input class="item-text" placeholder="To-do" spellcheck="false">`;
-    const cb = li.firstElementChild, tx = li.lastElementChild;
+    li.innerHTML = `<span class="handle" title="Drag to move" aria-hidden="true">⋮⋮</span><input type="checkbox" aria-label="Done"><input class="item-text" placeholder="To-do" spellcheck="false"><select class="due" title="Due day (optional)" aria-label="Due day"><option value="">–</option>${DAYS.map(d => `<option>${d}</option>`).join('')}</select>`;
+    const handle = $('.handle', li), cb = $('input[type=checkbox]', li), tx = $('.item-text', li), sel = $('.due', li);
+    // Always resolve the owning card at event time: items can be dragged between cards.
+    const owner = () => cardOfItem(it.id);
     cb.checked = it.done;
     tx.value = it.text;
+    sel.value = it.due || '';
+    paintDueLater(sel, li);
     cb.addEventListener('change', () => {
-      it.done = cb.checked; li.classList.toggle('done', it.done); save(); refreshProgress();
+      it.done = cb.checked; li.classList.toggle('done', it.done); save(); paintDue(sel, li); refreshProgress();
     });
+    sel.addEventListener('change', () => { it.due = sel.value; save(); paintDue(sel, li); });
     tx.addEventListener('input', () => { it.text = tx.value; save(); refreshProgress(); });
     tx.addEventListener('keydown', e => {
+      const oc = owner();
+      if (!oc) return;
       if (e.key === 'Enter') {
         e.preventDefault();
-        const idx = c.items.indexOf(it);
-        const n = { id: uid(), text: '', done: false };
-        c.items.splice(idx + 1, 0, n); save();
-        const nli = renderItem(c, n, cardEl);
+        const idx = oc.items.indexOf(it);
+        const n = { id: uid(), text: '', done: false, due: '' };
+        oc.items.splice(idx + 1, 0, n); save();
+        const nli = renderItem(oc, n, li.closest('.card'));
         li.after(nli); $('.item-text', nli).focus();
       } else if (e.key === 'Backspace' && tx.value === '') {
         e.preventDefault();
-        const idx = c.items.indexOf(it);
+        const idx = oc.items.indexOf(it);
         const prev = li.previousElementSibling;
-        c.items.splice(idx, 1); save(); li.remove(); refreshProgress();
+        const cardNow = li.closest('.card');
+        oc.items.splice(idx, 1); save(); li.remove(); refreshProgress();
         if (prev) { const p = $('.item-text', prev); p.focus(); p.setSelectionRange(p.value.length, p.value.length); }
-        else $('.title', cardEl).focus();
+        else if (cardNow) $('.title', cardNow).focus();
       } else if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
         const sib = e.key === 'ArrowDown' ? li.nextElementSibling : li.previousElementSibling;
         if (sib) { e.preventDefault(); $('.item-text', sib).focus(); }
       }
     });
+    handle.addEventListener('pointerdown', e => startDrag(e, li));
     return li;
+  }
+  // paint after the li is attached (cardOfItem needs state, not DOM, so this is safe immediately)
+  function paintDueLater(sel, li) { queueMicrotask(() => paintDue(sel, li)); }
+
+  // ---------- drag to reorder / move between cards ----------
+  let drag = null;
+  function startDrag(e, li) {
+    if (e.button !== undefined && e.button !== 0) return;
+    e.preventDefault();
+    const rect = li.getBoundingClientRect();
+    const ghost = li.cloneNode(true);
+    ghost.classList.add('drag-ghost');
+    ghost.style.width = rect.width + 'px';
+    ghost.style.left = rect.left + 'px';
+    ghost.style.top = rect.top + 'px';
+    // cloned inputs lose values; copy them for the ghost
+    $('.item-text', ghost).value = $('.item-text', li).value;
+    $('.due', ghost).value = $('.due', li).value;
+    document.body.appendChild(ghost);
+    const ph = document.createElement('li');
+    ph.className = 'placeholder';
+    ph.style.height = rect.height + 'px';
+    li.after(ph);
+    li.style.display = 'none';
+    document.body.classList.add('dragging');
+    drag = { li, ghost, ph, dx: e.clientX - rect.left, dy: e.clientY - rect.top, target: null, raf: 0, x: e.clientX, y: e.clientY };
+    document.addEventListener('pointermove', onDragMove);
+    document.addEventListener('pointerup', onDragEnd);
+    document.addEventListener('pointercancel', cancelDrag);
+    document.addEventListener('keydown', onDragKey);
+  }
+  function onDragMove(e) {
+    if (!drag) return;
+    drag.x = e.clientX; drag.y = e.clientY;
+    drag.ghost.style.left = (e.clientX - drag.dx) + 'px';
+    drag.ghost.style.top = (e.clientY - drag.dy) + 'px';
+    const el = document.elementFromPoint(e.clientX, e.clientY);
+    const card = el && el.closest('.card');
+    if (drag.target && drag.target !== card) drag.target.classList.remove('drop-target');
+    if (card) {
+      drag.target = card; card.classList.add('drop-target');
+      const ul = $('ul.items', card);
+      const rows = [...ul.children].filter(n => n !== drag.ph && n !== drag.li);
+      const before = rows.find(n => { const r = n.getBoundingClientRect(); return e.clientY < r.top + r.height / 2; });
+      if (before) { if (drag.ph.nextSibling !== before) ul.insertBefore(drag.ph, before); }
+      else if (ul.lastElementChild !== drag.ph) ul.appendChild(drag.ph);
+    }
+    // gentle auto-scroll near edges
+    if (!drag.raf) drag.raf = requestAnimationFrame(autoScroll);
+  }
+  function autoScroll() {
+    if (!drag) return;
+    drag.raf = 0;
+    const m = 40, y = drag.y, x = drag.x;
+    if (y < m) window.scrollBy(0, -12); else if (y > innerHeight - m) window.scrollBy(0, 12);
+    const strip = document.elementFromPoint(x, y)?.closest('.strip');
+    if (strip) {
+      const r = strip.getBoundingClientRect();
+      if (x < r.left + m) strip.scrollLeft -= 12; else if (x > r.right - m) strip.scrollLeft += 12;
+    }
+    if ((y < m || y > innerHeight - m || strip)) drag.raf = requestAnimationFrame(autoScroll);
+  }
+  function endDragCleanup() {
+    document.removeEventListener('pointermove', onDragMove);
+    document.removeEventListener('pointerup', onDragEnd);
+    document.removeEventListener('pointercancel', cancelDrag);
+    document.removeEventListener('keydown', onDragKey);
+    document.body.classList.remove('dragging');
+    if (drag) {
+      if (drag.raf) cancelAnimationFrame(drag.raf);
+      drag.ghost.remove();
+      if (drag.target) drag.target.classList.remove('drop-target');
+    }
+  }
+  function cancelDrag() {
+    if (!drag) return;
+    endDragCleanup();
+    drag.ph.remove(); drag.li.style.display = '';
+    drag = null;
+  }
+  function onDragKey(e) { if (e.key === 'Escape') cancelDrag(); }
+  function onDragEnd() {
+    if (!drag) return;
+    const { li, ph } = drag;
+    endDragCleanup();
+    const ul = ph.parentElement;
+    const destEl = ul && ul.closest('.card');
+    const id = li.dataset.id;
+    const src = cardOfItem(id);
+    const dest = destEl && state.cards.find(c => c.id === destEl.dataset.id);
+    if (!src || !dest) { ph.remove(); li.style.display = ''; drag = null; return; }
+    let idx = 0;
+    for (const n of ul.children) { if (n === ph) break; if (n !== li && !n.classList.contains('placeholder')) idx++; }
+    const it = src.items.splice(src.items.findIndex(x => x.id === id), 1)[0];
+    dest.items.splice(idx, 0, it);
+    drag = null;
+    save(); render();
   }
 
   function refreshProgress() {
