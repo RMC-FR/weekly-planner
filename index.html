@@ -64,7 +64,7 @@
   .strip::-webkit-scrollbar-thumb { background: var(--line); border-radius: 8px; }
 
   .card {
-    flex: 0 0 236px; width: 236px; background: var(--surface);
+    flex: 0 0 244px; width: 244px; background: var(--surface);
     border: 1px solid var(--line); border-radius: 12px; box-shadow: var(--shadow);
     padding: 10px 12px 8px; scroll-snap-align: start; position: relative;
     border-top: 3px solid var(--accent, var(--line));
@@ -148,6 +148,57 @@
   }
   .new-card:hover { border-color: var(--muted); color: var(--text); background: var(--surface); }
 
+  /* view tabs */
+  .tabs { display: inline-flex; background: var(--surface-2); border-radius: 9px; padding: 3px; margin-right: 6px; }
+  .tab { border: 0; background: transparent; padding: 4px 12px; border-radius: 7px; font-size: 13px; font-weight: 500; color: var(--muted); }
+  .tab.on { background: var(--surface); color: var(--text); box-shadow: var(--shadow); }
+
+  /* delete item */
+  .del-item {
+    flex: 0 0 auto; border: 0; background: transparent; color: var(--muted); width: 16px; height: 18px;
+    padding: 0; border-radius: 4px; font-size: 14px; line-height: 1; opacity: 0;
+  }
+  ul.items li:hover .del-item, ul.items li:focus-within .del-item { opacity: .8; }
+  .del-item:hover { color: var(--danger); background: var(--surface-2); opacity: 1 !important; }
+  @media (hover: none) { .del-item { opacity: .45; } }
+
+  /* card drag */
+  .card-handle {
+    flex: 0 0 auto; width: 12px; height: 20px; margin-left: -6px; display: grid; place-items: center;
+    color: var(--muted); cursor: grab; opacity: 0; touch-action: none; user-select: none;
+    font-size: 11px; letter-spacing: -2px; line-height: 1;
+  }
+  .card:hover .card-handle { opacity: .7; }
+  .card-handle:hover { opacity: 1 !important; }
+  @media (hover: none) { .card-handle { opacity: .45; } }
+  .card-placeholder {
+    flex: 0 0 244px; width: 244px; border: 1.5px dashed var(--this); border-radius: 12px;
+    background: rgba(47,111,223,.05);
+  }
+  .card.card-ghost {
+    position: fixed; z-index: 1000; pointer-events: none; margin: 0;
+    box-shadow: 0 10px 28px rgba(0,0,0,.16); transform: rotate(1.5deg); opacity: .96;
+  }
+  section.week.drop-week .strip { background: rgba(47,111,223,.04); }
+
+  /* topics view */
+  .topics-grid {
+    display: grid; grid-template-columns: repeat(auto-fill, minmax(290px, 1fr));
+    gap: 14px; padding: 14px 24px 40px; align-items: start;
+  }
+  .tpanel {
+    background: var(--surface); border: 1px solid var(--line); border-radius: 12px; box-shadow: var(--shadow);
+    padding: 12px 14px 10px; border-top: 3px solid var(--accent, var(--line));
+  }
+  .tpanel h2 { font-size: 15px; margin: 0; font-weight: 700; }
+  .tpanel .pmeta { font-size: 11.5px; }
+  .tweek { margin-top: 10px; }
+  .tweek-head { font-size: 11.5px; font-weight: 600; color: var(--muted); text-transform: uppercase; letter-spacing: .03em; }
+  .tweek-head.this { color: var(--this); }
+  .tpanel ul.items { margin-left: 0; }
+  .tpanel .handle { display: none; }
+  .topics-empty { color: var(--muted); padding: 20px 24px; }
+
   .readonly .card { opacity: .95; }
   .history-empty, .hint { color: var(--muted); padding: 4px 24px 12px; font-size: 13px; }
   .divider { height: 1px; background: var(--line); margin: 6px 24px; }
@@ -157,7 +208,9 @@
     .week-head { padding: 0 16px 8px; }
     .strip { padding: 2px 16px 12px; }
     .divider { margin: 6px 16px; }
-    .card { flex-basis: 220px; width: 220px; }
+    .card { flex-basis: 228px; width: 228px; }
+    .card-placeholder { flex-basis: 228px; width: 228px; }
+    .topics-grid { padding: 12px 16px 32px; }
   }
 </style>
 </head>
@@ -168,6 +221,10 @@
     <div class="today" id="today"></div>
   </div>
   <div class="toolbar">
+    <div class="tabs" role="tablist">
+      <button class="tab" data-view="weeks" role="tab">Weeks</button>
+      <button class="tab" data-view="topics" role="tab">Topics</button>
+    </div>
     <button class="tbtn" id="btnHistory">History</button>
     <button class="tbtn" id="btnExport">Export</button>
     <button class="tbtn" id="btnImport">Import</button>
@@ -242,17 +299,33 @@
   // ---------- rendering ----------
   let showHistory = false;
   let weekKeyShown = '';
+  const VIEW_KEY = 'weekly-planner-view';
+  let view = (() => { try { return localStorage.getItem(VIEW_KEY) === 'topics' ? 'topics' : 'weeks'; } catch (e) { return 'weeks'; } })();
+
+  function weekName(key) {
+    const w = currentWeeks().find(x => x.key === key);
+    return w ? `${w.label} · ${rangeLabel(w.mon)}` : `Week of ${dmy(parseIso(key))}`;
+  }
 
   function render() {
     const weeks = currentWeeks();
     weekKeyShown = weeks[1].key;
     $('#today').textContent = `Today ${dmy(new Date())} · weeks start on Monday`;
+    document.querySelectorAll('.tab').forEach(b => b.classList.toggle('on', b.dataset.view === view));
+    $('#btnHistory').hidden = view !== 'weeks';
     $('#btnHistory').classList.toggle('active', showHistory);
     const main = $('#main');
     const scrolls = {};
     main.querySelectorAll('section.week').forEach(s => { scrolls[s.dataset.week] = $('.strip', s).scrollLeft; });
     const pageY = window.scrollY;
     main.innerHTML = '';
+    if (view === 'topics') {
+      renderTopics(main);
+      refreshTopicList();
+      refreshProgress();
+      window.scrollTo(0, pageY);
+      return;
+    }
     for (const w of weeks) main.appendChild(renderWeek(w, false));
     if (showHistory) {
       main.appendChild(Object.assign(document.createElement('div'), { className: 'divider' }));
@@ -273,6 +346,59 @@
     refreshProgress();
     main.querySelectorAll('section.week').forEach(s => { if (scrolls[s.dataset.week]) $('.strip', s).scrollLeft = scrolls[s.dataset.week]; });
     window.scrollTo(0, pageY);
+  }
+
+  // Topics view: every to-do from every week, collected under its topic name.
+  function renderTopics(main) {
+    const groups = new Map();
+    for (const c of state.cards) {
+      const k = topicKey(c.topic);
+      if (!k) continue;
+      if (!groups.has(k)) groups.set(k, []);
+      groups.get(k).push(c);
+    }
+    if (!groups.size) {
+      const p = document.createElement('div');
+      p.className = 'topics-empty';
+      p.textContent = 'No topics yet. Add a topic card in the Weeks view and it will show up here.';
+      main.appendChild(p);
+      return;
+    }
+    const grid = document.createElement('div');
+    grid.className = 'topics-grid';
+    const entries = [...groups.entries()].sort((a, b) => a[0].localeCompare(b[0]));
+    const thisKey = currentWeeks()[1].key;
+    for (const [k, cards] of entries) {
+      cards.sort((a, b) => b.week.localeCompare(a.week) || a.order - b.order);
+      const panel = document.createElement('div');
+      panel.className = 'tpanel';
+      panel.dataset.topic = k;
+      const name = cards[0].topic.trim();
+      const col = topicColor(name);
+      if (col) panel.style.setProperty('--accent', col);
+      panel.innerHTML = `
+        <h2></h2>
+        <div class="progress">
+          <div class="bar"><i></i></div>
+          <div class="pmeta"><span class="p-all"></span><span class="p-weeks"></span></div>
+        </div>`;
+      $('h2', panel).textContent = name;
+      $('.p-weeks', panel).textContent = `${cards.length} week${cards.length > 1 ? 's' : ''}`;
+      for (const c of cards) {
+        const wk = document.createElement('div');
+        wk.className = 'tweek';
+        const head = document.createElement('div');
+        head.className = 'tweek-head' + (c.week === thisKey ? ' this' : '');
+        head.textContent = weekName(c.week);
+        const ul = document.createElement('ul');
+        ul.className = 'items';
+        c.items.forEach(it => ul.appendChild(renderItem(c, it, null)));
+        wk.append(head, ul);
+        panel.appendChild(wk);
+      }
+      grid.appendChild(panel);
+    }
+    main.appendChild(grid);
   }
 
   function renderWeek(w, isHistory) {
@@ -310,6 +436,7 @@
     if (color) el.style.setProperty('--accent', color);
     el.innerHTML = `
       <div class="card-top">
+        <span class="card-handle" title="Drag to move this card" aria-hidden="true">⋮⋮</span>
         <input class="title" placeholder="Topic name" list="topics" spellcheck="false">
         <button class="icon-btn" title="Delete topic card" aria-label="Delete topic card">×</button>
       </div>
@@ -336,6 +463,7 @@
       if (hasContent && !confirm(`Delete "${c.topic.trim() || 'Untitled'}" for this week?`)) return;
       state.cards = state.cards.filter(x => x.id !== c.id); save(); render();
     });
+    $('.card-handle', el).addEventListener('pointerdown', e => startCardDrag(e, el));
     const ul = $('.items', el);
     c.items.forEach(it => ul.appendChild(renderItem(c, it, el)));
     $('.add-item', el).addEventListener('click', () => {
@@ -369,8 +497,14 @@
     const li = document.createElement('li');
     li.dataset.id = it.id;
     li.classList.toggle('done', it.done);
-    li.innerHTML = `<span class="handle" title="Drag to move" aria-hidden="true">⋮⋮</span><input type="checkbox" aria-label="Done"><input class="item-text" placeholder="To-do" spellcheck="false"><select class="due" title="Due day (optional)" aria-label="Due day"><option value="">–</option>${DAYS.map(d => `<option>${d}</option>`).join('')}</select>`;
+    li.innerHTML = `<span class="handle" title="Drag to move" aria-hidden="true">⋮⋮</span><input type="checkbox" aria-label="Done"><input class="item-text" placeholder="To-do" spellcheck="false"><select class="due" title="Due day (optional)" aria-label="Due day"><option value="">–</option>${DAYS.map(d => `<option>${d}</option>`).join('')}</select><button class="del-item" title="Delete item" aria-label="Delete item">×</button>`;
     const handle = $('.handle', li), cb = $('input[type=checkbox]', li), tx = $('.item-text', li), sel = $('.due', li);
+    $('.del-item', li).addEventListener('click', () => {
+      const oc = owner();
+      if (!oc) return;
+      oc.items.splice(oc.items.findIndex(x => x.id === it.id), 1);
+      save(); li.remove(); refreshProgress();
+    });
     // Always resolve the owning card at event time: items can be dragged between cards.
     const owner = () => cardOfItem(it.id);
     cb.checked = it.done;
@@ -521,6 +655,111 @@
       state.cards.filter(c => c.week === sec.dataset.week).forEach(c => { const s = cardStats(c); t += s.total; d += s.done; });
       $('.week-sum', sec).textContent = t ? `${d}/${t} done` : '';
     });
+    document.querySelectorAll('.tpanel').forEach(p => {
+      const all = topicStats(p.dataset.topic);
+      const pct = all.total ? Math.round(all.done / all.total * 100) : 0;
+      $('.bar > i', p).style.width = pct + '%';
+      $('.p-all', p).textContent = all.total ? `${pct}% · ${all.done}/${all.total} done` : 'No items yet';
+    });
+  }
+
+  // ---------- drag topic cards between weeks ----------
+  let cdrag = null;
+  function startCardDrag(e, cardEl) {
+    if (e.button !== undefined && e.button !== 0) return;
+    e.preventDefault();
+    const rect = cardEl.getBoundingClientRect();
+    const ghost = cardEl.cloneNode(true);
+    ghost.classList.add('card-ghost');
+    ghost.style.width = rect.width + 'px';
+    ghost.style.left = rect.left + 'px';
+    ghost.style.top = rect.top + 'px';
+    $('.title', ghost).value = $('.title', cardEl).value;
+    ghost.querySelectorAll('.item-text').forEach((n, i) => { n.value = cardEl.querySelectorAll('.item-text')[i].value; });
+    document.body.appendChild(ghost);
+    const ph = document.createElement('div');
+    ph.className = 'card-placeholder';
+    ph.style.height = rect.height + 'px';
+    cardEl.after(ph);
+    cardEl.style.display = 'none';
+    document.body.classList.add('dragging');
+    cdrag = { el: cardEl, ghost, ph, dx: e.clientX - rect.left, dy: e.clientY - rect.top, sec: null, x: e.clientX, y: e.clientY, raf: 0 };
+    document.addEventListener('pointermove', onCardMove);
+    document.addEventListener('pointerup', onCardEnd);
+    document.addEventListener('pointercancel', cancelCardDrag);
+    document.addEventListener('keydown', onCardKey);
+  }
+  function onCardMove(e) {
+    if (!cdrag) return;
+    cdrag.x = e.clientX; cdrag.y = e.clientY;
+    cdrag.ghost.style.left = (e.clientX - cdrag.dx) + 'px';
+    cdrag.ghost.style.top = (e.clientY - cdrag.dy) + 'px';
+    const el = document.elementFromPoint(e.clientX, e.clientY);
+    const sec = el && el.closest('section.week');
+    if (cdrag.sec && cdrag.sec !== sec) cdrag.sec.classList.remove('drop-week');
+    if (sec) {
+      cdrag.sec = sec; sec.classList.add('drop-week');
+      const strip = $('.strip', sec);
+      const cards = [...strip.children].filter(n => n.classList.contains('card') && n !== cdrag.el);
+      const before = cards.find(n => { const r = n.getBoundingClientRect(); return e.clientX < r.left + r.width / 2; })
+        || $('.new-card', strip);
+      if (cdrag.ph.nextSibling !== before) strip.insertBefore(cdrag.ph, before);
+      cdrag.ph.style.height = '';
+    }
+    if (!cdrag.raf) cdrag.raf = requestAnimationFrame(cardAutoScroll);
+  }
+  function cardAutoScroll() {
+    if (!cdrag) return;
+    cdrag.raf = 0;
+    const m = 50, { x, y } = cdrag;
+    if (y < m) window.scrollBy(0, -14); else if (y > innerHeight - m) window.scrollBy(0, 14);
+    const strip = document.elementFromPoint(x, y)?.closest('.strip');
+    if (strip) {
+      const r = strip.getBoundingClientRect();
+      if (x < r.left + m) strip.scrollLeft -= 14; else if (x > r.right - m) strip.scrollLeft += 14;
+    }
+    cdrag.raf = requestAnimationFrame(cardAutoScroll);
+  }
+  function cardCleanup() {
+    document.removeEventListener('pointermove', onCardMove);
+    document.removeEventListener('pointerup', onCardEnd);
+    document.removeEventListener('pointercancel', cancelCardDrag);
+    document.removeEventListener('keydown', onCardKey);
+    document.body.classList.remove('dragging');
+    if (cdrag) {
+      if (cdrag.raf) cancelAnimationFrame(cdrag.raf);
+      cdrag.ghost.remove();
+      if (cdrag.sec) cdrag.sec.classList.remove('drop-week');
+    }
+  }
+  function cancelCardDrag() {
+    if (!cdrag) return;
+    cardCleanup();
+    cdrag.ph.remove(); cdrag.el.style.display = '';
+    cdrag = null;
+  }
+  function onCardKey(e) { if (e.key === 'Escape') cancelCardDrag(); }
+  function onCardEnd() {
+    if (!cdrag) return;
+    const { el, ph } = cdrag;
+    cardCleanup();
+    const sec = ph.closest('section.week');
+    const c = state.cards.find(x => x.id === el.dataset.id);
+    if (!sec || !c) { ph.remove(); el.style.display = ''; cdrag = null; return; }
+    const srcWeek = c.week, destWeek = sec.dataset.week;
+    // final order = DOM order of the destination strip, with the dragged card at the placeholder
+    const ids = [];
+    for (const n of $('.strip', sec).children) {
+      if (n === ph) ids.push(c.id);
+      else if (n.classList.contains('card') && n !== el) ids.push(n.dataset.id);
+    }
+    c.week = destWeek;
+    ids.forEach((id, i) => { const x = state.cards.find(k => k.id === id); if (x) x.order = i; });
+    if (srcWeek !== destWeek) {
+      state.cards.filter(k => k.week === srcWeek).sort((a, b) => a.order - b.order).forEach((k, i) => { k.order = i; });
+    }
+    cdrag = null;
+    save(); render();
   }
 
   function refreshTopicList() {
@@ -542,6 +781,12 @@
 
   // ---------- toolbar ----------
   $('#btnHistory').addEventListener('click', () => { showHistory = !showHistory; render(); });
+  document.querySelectorAll('.tab').forEach(b => b.addEventListener('click', () => {
+    view = b.dataset.view;
+    try { localStorage.setItem(VIEW_KEY, view); } catch (e) {}
+    window.scrollTo(0, 0);
+    render();
+  }));
   $('#btnExport').addEventListener('click', () => {
     const blob = new Blob([JSON.stringify(state, null, 2)], { type: 'application/json' });
     const a = document.createElement('a');
