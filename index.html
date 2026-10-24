@@ -373,7 +373,10 @@
       const panel = document.createElement('div');
       panel.className = 'tpanel';
       panel.dataset.topic = k;
-      const name = cards[0].topic.trim();
+      // display name: the most used spelling; ties go to the earliest week
+      const counts = new Map();
+      [...cards].reverse().forEach(c => { const n = c.topic.trim(); counts.set(n, (counts.get(n) || 0) + 1); });
+      const name = [...counts.entries()].reduce((best, cur) => cur[1] > best[1] ? cur : best)[0];
       const col = topicColor(name);
       if (col) panel.style.setProperty('--accent', col);
       panel.innerHTML = `
