@@ -3,6 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="color-scheme" content="light only">
 <title>Weekly Planner</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -19,18 +20,7 @@
     --danger: #c0453a;
     --this: #2f6fdf;
     --shadow: 0 1px 2px rgba(0,0,0,.05), 0 2px 8px rgba(0,0,0,.04);
-  }
-  @media (prefers-color-scheme: dark) {
-    :root:not([data-theme="light"]) {
-      --bg: #171716; --surface: #222220; --surface-2: #2b2b29; --text: #ecece8;
-      --muted: #8f8f89; --line: #353532; --check: #4fb184; --danger: #e0675c; --this: #6c9bff;
-      --shadow: 0 1px 2px rgba(0,0,0,.3);
-    }
-  }
-  :root[data-theme="dark"] {
-    --bg: #171716; --surface: #222220; --surface-2: #2b2b29; --text: #ecece8;
-    --muted: #8f8f89; --line: #353532; --check: #4fb184; --danger: #e0675c; --this: #6c9bff;
-    --shadow: 0 1px 2px rgba(0,0,0,.3);
+    color-scheme: light;
   }
   * { box-sizing: border-box; }
   html, body { margin: 0; }
