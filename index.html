@@ -1,0 +1,425 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Weekly Planner</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --bg: #f6f6f4;
+    --surface: #ffffff;
+    --surface-2: #f0f0ed;
+    --text: #1f1f1d;
+    --muted: #8a8a85;
+    --line: #e4e4df;
+    --check: #2f7d5b;
+    --danger: #c0453a;
+    --this: #2f6fdf;
+    --shadow: 0 1px 2px rgba(0,0,0,.05), 0 2px 8px rgba(0,0,0,.04);
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      --bg: #171716; --surface: #222220; --surface-2: #2b2b29; --text: #ecece8;
+      --muted: #8f8f89; --line: #353532; --check: #4fb184; --danger: #e0675c; --this: #6c9bff;
+      --shadow: 0 1px 2px rgba(0,0,0,.3);
+    }
+  }
+  :root[data-theme="dark"] {
+    --bg: #171716; --surface: #222220; --surface-2: #2b2b29; --text: #ecece8;
+    --muted: #8f8f89; --line: #353532; --check: #4fb184; --danger: #e0675c; --this: #6c9bff;
+    --shadow: 0 1px 2px rgba(0,0,0,.3);
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; }
+  body {
+    background: var(--bg); color: var(--text);
+    font: 14px/1.45 Inter, system-ui, -apple-system, "Segoe UI", sans-serif;
+    -webkit-font-smoothing: antialiased;
+  }
+  button { font: inherit; color: inherit; cursor: pointer; }
+  input { font: inherit; color: inherit; }
+
+  header {
+    display: flex; align-items: center; justify-content: space-between; gap: 12px;
+    padding: 20px 24px 8px; flex-wrap: wrap;
+  }
+  header h1 { font-size: 20px; font-weight: 700; margin: 0; letter-spacing: -.01em; }
+  header .today { color: var(--muted); font-size: 13px; margin-top: 2px; }
+  .toolbar { display: flex; gap: 6px; flex-wrap: wrap; }
+  .tbtn {
+    background: var(--surface); border: 1px solid var(--line); border-radius: 8px;
+    padding: 6px 12px; font-size: 13px; font-weight: 500;
+  }
+  .tbtn:hover { background: var(--surface-2); }
+  .tbtn.active { border-color: var(--this); color: var(--this); }
+
+  main { padding: 0 0 40px; }
+  .week { padding: 14px 0 6px; }
+  .week-head {
+    display: flex; align-items: baseline; gap: 10px; padding: 0 24px 10px;
+  }
+  .week-label { font-size: 15px; font-weight: 700; }
+  .week.this .week-label { color: var(--this); }
+  .week-range { color: var(--muted); font-size: 13px; }
+  .week-sum { color: var(--muted); font-size: 12px; margin-left: auto; }
+
+  .strip {
+    display: flex; gap: 12px; align-items: flex-start;
+    overflow-x: auto; padding: 2px 24px 14px; scroll-snap-type: x proximity;
+  }
+  .strip::-webkit-scrollbar { height: 8px; }
+  .strip::-webkit-scrollbar-thumb { background: var(--line); border-radius: 8px; }
+
+  .card {
+    flex: 0 0 210px; width: 210px; background: var(--surface);
+    border: 1px solid var(--line); border-radius: 12px; box-shadow: var(--shadow);
+    padding: 10px 12px 8px; scroll-snap-align: start; position: relative;
+    border-top: 3px solid var(--accent, var(--line));
+  }
+  .card-top { display: flex; align-items: center; gap: 4px; }
+  .title {
+    flex: 1; min-width: 0; border: 0; background: transparent; outline: none;
+    font-weight: 600; font-size: 14px; padding: 2px 0;
+  }
+  .title::placeholder { color: var(--muted); font-weight: 500; }
+  .icon-btn {
+    border: 0; background: transparent; color: var(--muted); border-radius: 6px;
+    width: 22px; height: 22px; display: grid; place-items: center; font-size: 15px; line-height: 1;
+    opacity: 0; transition: opacity .12s;
+  }
+  .card:hover .icon-btn, .card:focus-within .icon-btn { opacity: 1; }
+  .icon-btn:hover { background: var(--surface-2); color: var(--danger); }
+  @media (hover: none) { .icon-btn { opacity: .6; } }
+
+  .progress { margin: 6px 0 4px; }
+  .bar { height: 5px; background: var(--surface-2); border-radius: 5px; overflow: hidden; }
+  .bar > i { display: block; height: 100%; width: 0; background: var(--accent, var(--check)); border-radius: 5px; transition: width .25s; }
+  .pmeta { display: flex; justify-content: space-between; color: var(--muted); font-size: 11px; margin-top: 3px; }
+
+  ul.items { list-style: none; margin: 6px 0 0; padding: 0; }
+  ul.items li { display: flex; align-items: center; gap: 7px; padding: 2px 0; }
+  ul.items input[type=checkbox] {
+    appearance: none; -webkit-appearance: none; margin: 0; flex: 0 0 auto;
+    width: 16px; height: 16px; border: 1.5px solid var(--muted); border-radius: 4px;
+    display: grid; place-items: center; cursor: pointer; background: var(--surface);
+  }
+  ul.items input[type=checkbox]:checked { background: var(--check); border-color: var(--check); }
+  ul.items input[type=checkbox]:checked::after {
+    content: ""; width: 4px; height: 8px; border: solid #fff; border-width: 0 2px 2px 0;
+    transform: rotate(45deg) translate(-1px, -1px);
+  }
+  .item-text {
+    flex: 1; min-width: 0; border: 0; background: transparent; outline: none; padding: 2px 0;
+    font-size: 13.5px;
+  }
+  .item-text::placeholder { color: var(--muted); opacity: .6; }
+  li.done .item-text { color: var(--muted); text-decoration: line-through; }
+  .add-item {
+    border: 0; background: transparent; color: var(--muted); font-size: 12.5px;
+    padding: 4px 0 2px; text-align: left; width: 100%;
+  }
+  .add-item:hover { color: var(--text); }
+
+  .new-card {
+    flex: 0 0 150px; height: 92px; border: 1.5px dashed var(--line); border-radius: 12px;
+    background: transparent; color: var(--muted); font-weight: 500; font-size: 13px;
+  }
+  .new-card:hover { border-color: var(--muted); color: var(--text); background: var(--surface); }
+
+  .readonly .card { opacity: .95; }
+  .history-empty, .hint { color: var(--muted); padding: 4px 24px 12px; font-size: 13px; }
+  .divider { height: 1px; background: var(--line); margin: 6px 24px; }
+
+  @media (max-width: 600px) {
+    header { padding: 16px 16px 6px; }
+    .week-head { padding: 0 16px 8px; }
+    .strip { padding: 2px 16px 12px; }
+    .divider { margin: 6px 16px; }
+    .card { flex-basis: 190px; width: 190px; }
+  }
+</style>
+</head>
+<body>
+<header>
+  <div>
+    <h1>Weekly Planner</h1>
+    <div class="today" id="today"></div>
+  </div>
+  <div class="toolbar">
+    <button class="tbtn" id="btnHistory">History</button>
+    <button class="tbtn" id="btnExport">Export</button>
+    <button class="tbtn" id="btnImport">Import</button>
+    <input type="file" id="fileImport" accept="application/json" hidden>
+  </div>
+</header>
+<main id="main"></main>
+<datalist id="topics"></datalist>
+
+<script>
+(() => {
+  const KEY = 'weekly-planner-v1';
+  const $ = (s, el = document) => el.querySelector(s);
+
+  // ---------- storage ----------
+  function load() {
+    try {
+      const raw = localStorage.getItem(KEY);
+      if (raw) { const d = JSON.parse(raw); if (d && Array.isArray(d.cards)) return d; }
+    } catch (e) {}
+    return { version: 1, cards: [] };
+  }
+  let state = load();
+  function save() {
+    try { localStorage.setItem(KEY, JSON.stringify(state)); } catch (e) {}
+  }
+  const uid = () => Math.random().toString(36).slice(2, 10) + Date.now().toString(36).slice(-4);
+
+  // ---------- dates (weeks start Monday) ----------
+  const pad = n => String(n).padStart(2, '0');
+  const iso = d => `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
+  const parseIso = s => { const [y, m, d] = s.split('-').map(Number); return new Date(y, m - 1, d); };
+  const addDays = (d, n) => { const x = new Date(d); x.setDate(x.getDate() + n); return x; };
+  const mondayOf = d => { const x = new Date(d.getFullYear(), d.getMonth(), d.getDate()); return addDays(x, -((x.getDay() + 6) % 7)); };
+  const dm = d => `${pad(d.getDate())}/${pad(d.getMonth() + 1)}`;
+  const dmy = d => `${dm(d)}/${d.getFullYear()}`;
+  const rangeLabel = mon => `${dm(mon)} – ${dm(addDays(mon, 6))}`;
+
+  function currentWeeks() {
+    const thisMon = mondayOf(new Date());
+    return [
+      { key: iso(addDays(thisMon, -7)), label: 'Last Week', cls: 'last', mon: addDays(thisMon, -7) },
+      { key: iso(thisMon), label: 'This Week', cls: 'this', mon: thisMon },
+      { key: iso(addDays(thisMon, 7)), label: 'Next Week', cls: 'next', mon: addDays(thisMon, 7) },
+    ];
+  }
+
+  // ---------- topics ----------
+  const topicKey = t => (t || '').trim().toLowerCase();
+  function topicColor(t) {
+    const k = topicKey(t);
+    if (!k) return '';
+    let h = 0; for (const c of k) h = (h * 31 + c.charCodeAt(0)) >>> 0;
+    return `hsl(${h % 360} 55% 52%)`;
+  }
+  function topicStats(t) {
+    const k = topicKey(t);
+    let total = 0, done = 0;
+    if (!k) return { total, done };
+    for (const c of state.cards) {
+      if (topicKey(c.topic) !== k) continue;
+      for (const it of c.items) { if (it.text.trim()) { total++; if (it.done) done++; } }
+    }
+    return { total, done };
+  }
+  function cardStats(c) {
+    let total = 0, done = 0;
+    for (const it of c.items) { if (it.text.trim()) { total++; if (it.done) done++; } }
+    return { total, done };
+  }
+
+  // ---------- rendering ----------
+  let showHistory = false;
+  let weekKeyShown = '';
+
+  function render() {
+    const weeks = currentWeeks();
+    weekKeyShown = weeks[1].key;
+    $('#today').textContent = `Today ${dmy(new Date())} · weeks start on Monday`;
+    $('#btnHistory').classList.toggle('active', showHistory);
+    const main = $('#main');
+    main.innerHTML = '';
+    for (const w of weeks) main.appendChild(renderWeek(w, false));
+    if (showHistory) {
+      main.appendChild(Object.assign(document.createElement('div'), { className: 'divider' }));
+      const older = [...new Set(state.cards.map(c => c.week))]
+        .filter(k => k < weeks[0].key).sort().reverse();
+      if (!older.length) {
+        const p = document.createElement('div');
+        p.className = 'history-empty';
+        p.textContent = 'No older weeks yet. Weeks before Last Week will appear here.';
+        main.appendChild(p);
+      }
+      for (const k of older) {
+        const mon = parseIso(k);
+        main.appendChild(renderWeek({ key: k, label: `Week of ${dmy(mon)}`, cls: 'old', mon }, true));
+      }
+    }
+    refreshTopicList();
+    refreshProgress();
+  }
+
+  function renderWeek(w, isHistory) {
+    const sec = document.createElement('section');
+    sec.className = `week ${w.cls}`;
+    const cards = state.cards.filter(c => c.week === w.key).sort((a, b) => a.order - b.order);
+    let t = 0, d = 0;
+    cards.forEach(c => { const s = cardStats(c); t += s.total; d += s.done; });
+    sec.innerHTML = `
+      <div class="week-head">
+        <span class="week-label"></span>
+        <span class="week-range"></span>
+        <span class="week-sum"></span>
+      </div>
+      <div class="strip"></div>`;
+    $('.week-label', sec).textContent = w.label;
+    $('.week-range', sec).textContent = rangeLabel(w.mon);
+    $('.week-sum', sec).textContent = t ? `${d}/${t} done` : '';
+    sec.dataset.week = w.key;
+    const strip = $('.strip', sec);
+    cards.forEach(c => strip.appendChild(renderCard(c)));
+    const add = document.createElement('button');
+    add.className = 'new-card';
+    add.textContent = '+ New Topic';
+    add.addEventListener('click', () => addCard(w.key));
+    strip.appendChild(add);
+    return sec;
+  }
+
+  function renderCard(c) {
+    const el = document.createElement('div');
+    el.className = 'card';
+    el.dataset.id = c.id;
+    const color = topicColor(c.topic);
+    if (color) el.style.setProperty('--accent', color);
+    el.innerHTML = `
+      <div class="card-top">
+        <input class="title" placeholder="Topic name" list="topics" spellcheck="false">
+        <button class="icon-btn" title="Delete topic card" aria-label="Delete topic card">×</button>
+      </div>
+      <div class="progress">
+        <div class="bar"><i></i></div>
+        <div class="pmeta"><span class="p-all"></span><span class="p-week"></span></div>
+      </div>
+      <ul class="items"></ul>
+      <button class="add-item">+ Add item</button>`;
+    const title = $('.title', el);
+    title.value = c.topic;
+    title.addEventListener('input', () => {
+      c.topic = title.value; save();
+      const col = topicColor(c.topic);
+      if (col) el.style.setProperty('--accent', col); else el.style.removeProperty('--accent');
+      refreshProgress();
+    });
+    title.addEventListener('change', refreshTopicList);
+    title.addEventListener('keydown', e => {
+      if (e.key === 'Enter') { e.preventDefault(); const first = $('.item-text', el); if (first) first.focus(); }
+    });
+    $('.icon-btn', el).addEventListener('click', () => {
+      const hasContent = c.topic.trim() || c.items.some(i => i.text.trim());
+      if (hasContent && !confirm(`Delete "${c.topic.trim() || 'Untitled'}" for this week?`)) return;
+      state.cards = state.cards.filter(x => x.id !== c.id); save(); render();
+    });
+    const ul = $('.items', el);
+    c.items.forEach(it => ul.appendChild(renderItem(c, it, el)));
+    $('.add-item', el).addEventListener('click', () => {
+      const it = { id: uid(), text: '', done: false };
+      c.items.push(it); save();
+      const li = renderItem(c, it, el); ul.appendChild(li); $('.item-text', li).focus();
+    });
+    return el;
+  }
+
+  function renderItem(c, it, cardEl) {
+    const li = document.createElement('li');
+    li.dataset.id = it.id;
+    li.classList.toggle('done', it.done);
+    li.innerHTML = `<input type="checkbox" aria-label="Done"><input class="item-text" placeholder="To-do" spellcheck="false">`;
+    const cb = li.firstElementChild, tx = li.lastElementChild;
+    cb.checked = it.done;
+    tx.value = it.text;
+    cb.addEventListener('change', () => {
+      it.done = cb.checked; li.classList.toggle('done', it.done); save(); refreshProgress();
+    });
+    tx.addEventListener('input', () => { it.text = tx.value; save(); refreshProgress(); });
+    tx.addEventListener('keydown', e => {
+      if (e.key === 'Enter') {
+        e.preventDefault();
+        const idx = c.items.indexOf(it);
+        const n = { id: uid(), text: '', done: false };
+        c.items.splice(idx + 1, 0, n); save();
+        const nli = renderItem(c, n, cardEl);
+        li.after(nli); $('.item-text', nli).focus();
+      } else if (e.key === 'Backspace' && tx.value === '') {
+        e.preventDefault();
+        const idx = c.items.indexOf(it);
+        const prev = li.previousElementSibling;
+        c.items.splice(idx, 1); save(); li.remove(); refreshProgress();
+        if (prev) { const p = $('.item-text', prev); p.focus(); p.setSelectionRange(p.value.length, p.value.length); }
+        else $('.title', cardEl).focus();
+      } else if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
+        const sib = e.key === 'ArrowDown' ? li.nextElementSibling : li.previousElementSibling;
+        if (sib) { e.preventDefault(); $('.item-text', sib).focus(); }
+      }
+    });
+    return li;
+  }
+
+  function refreshProgress() {
+    document.querySelectorAll('.card').forEach(el => {
+      const c = state.cards.find(x => x.id === el.dataset.id);
+      if (!c) return;
+      const all = topicStats(c.topic), wk = cardStats(c);
+      const pct = all.total ? Math.round(all.done / all.total * 100) : 0;
+      $('.bar > i', el).style.width = pct + '%';
+      $('.p-all', el).textContent = all.total ? `${pct}% · ${all.done}/${all.total} all weeks` : 'No items yet';
+      $('.p-week', el).textContent = wk.total ? `${wk.done}/${wk.total} this card` : '';
+    });
+    document.querySelectorAll('section.week').forEach(sec => {
+      let t = 0, d = 0;
+      state.cards.filter(c => c.week === sec.dataset.week).forEach(c => { const s = cardStats(c); t += s.total; d += s.done; });
+      $('.week-sum', sec).textContent = t ? `${d}/${t} done` : '';
+    });
+  }
+
+  function refreshTopicList() {
+    const names = new Map();
+    state.cards.forEach(c => { const k = topicKey(c.topic); if (k && !names.has(k)) names.set(k, c.topic.trim()); });
+    const dl = $('#topics'); dl.innerHTML = '';
+    [...names.values()].sort((a, b) => a.localeCompare(b)).forEach(n => {
+      const o = document.createElement('option'); o.value = n; dl.appendChild(o);
+    });
+  }
+
+  function addCard(week) {
+    const maxOrder = state.cards.filter(c => c.week === week).reduce((m, c) => Math.max(m, c.order), -1);
+    const c = { id: uid(), week, topic: '', order: maxOrder + 1, items: [0, 1, 2].map(() => ({ id: uid(), text: '', done: false })) };
+    state.cards.push(c); save(); render();
+    const el = document.querySelector(`.card[data-id="${c.id}"]`);
+    if (el) { el.scrollIntoView({ behavior: 'smooth', block: 'nearest', inline: 'nearest' }); $('.title', el).focus(); }
+  }
+
+  // ---------- toolbar ----------
+  $('#btnHistory').addEventListener('click', () => { showHistory = !showHistory; render(); });
+  $('#btnExport').addEventListener('click', () => {
+    const blob = new Blob([JSON.stringify(state, null, 2)], { type: 'application/json' });
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(blob);
+    a.download = `weekly-planner-${iso(new Date())}.json`;
+    document.body.appendChild(a); a.click(); a.remove();
+    setTimeout(() => URL.revokeObjectURL(a.href), 1000);
+  });
+  $('#btnImport').addEventListener('click', () => $('#fileImport').click());
+  $('#fileImport').addEventListener('change', async e => {
+    const f = e.target.files[0]; e.target.value = '';
+    if (!f) return;
+    try {
+      const d = JSON.parse(await f.text());
+      if (!d || !Array.isArray(d.cards)) throw new Error('bad');
+      if (!confirm('Replace all current data with this backup?')) return;
+      state = d; save(); render();
+    } catch (err) { alert('That file is not a Weekly Planner backup.'); }
+  });
+
+  // ---------- auto roll over on Monday / sync tabs ----------
+  setInterval(() => { if (iso(mondayOf(new Date())) !== weekKeyShown && !document.activeElement.matches('input')) render(); }, 60000);
+  document.addEventListener('visibilitychange', () => { if (!document.hidden && iso(mondayOf(new Date())) !== weekKeyShown) render(); });
+  window.addEventListener('storage', e => { if (e.key === KEY) { state = load(); render(); } });
+
+  render();
+})();
+</script>
+</body>
+</html>
