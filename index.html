@@ -136,19 +136,7 @@
     resize: none; overflow: hidden; display: block; height: 22px;
     white-space: pre-wrap; overflow-wrap: anywhere; word-break: break-word;
   }
-  /* long to-dos wrap: show at most two lines unless you're editing it */
-  .item-text:not(.editing) { max-height: 40px; }
-  /* more than two lines: fade the end of line two so it reads as "continues…" */
-  .item-text.clipped:not(.editing) {
-    -webkit-mask-image: linear-gradient(#000, #000), linear-gradient(to right, #000 62%, transparent 96%);
-    -webkit-mask-size: 100% 20px, 100% 20px;
-    -webkit-mask-position: top, bottom;
-    -webkit-mask-repeat: no-repeat;
-    mask-image: linear-gradient(#000, #000), linear-gradient(to right, #000 62%, transparent 96%);
-    mask-size: 100% 20px, 100% 20px;
-    mask-position: top, bottom;
-    mask-repeat: no-repeat;
-  }
+  /* long to-dos wrap onto as many lines as they need */
   ul.items li { align-items: flex-start; }
   ul.items li > input[type=checkbox] { margin-top: 3px; }
   ul.items li > .handle { margin-top: 1px; }
@@ -589,13 +577,12 @@
   // paint after the li is attached (cardOfItem needs state, not DOM, so this is safe immediately)
   function paintDueLater(sel, li) { queueMicrotask(() => { paintDue(sel, li); fitText($('.item-text', li)); }); }
 
-  // grow a to-do's text box to fit its wrapped lines (CSS caps it at two lines when not editing)
+  // grow a to-do's text box to fit all of its wrapped lines
   function fitText(t) {
     if (!t || !t.isConnected) return;
     t.style.height = 'auto';
     const h = Math.max(22, t.scrollHeight);
     t.style.height = h + 'px';
-    t.classList.toggle('clipped', h > 44);
   }
   let fitRaf = 0;
   window.addEventListener('resize', () => {
