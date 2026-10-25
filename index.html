@@ -148,6 +148,14 @@
   }
   .new-card:hover { border-color: var(--muted); color: var(--text); background: var(--surface); }
 
+  /* sync status */
+  .tbtn.sync { display: inline-flex; align-items: center; gap: 6px; color: var(--muted); }
+  .tbtn.sync .dot { width: 7px; height: 7px; border-radius: 50%; background: var(--line); }
+  .tbtn.sync[data-s="synced"] .dot { background: var(--check); }
+  .tbtn.sync[data-s="saving"] .dot { background: #e0a020; }
+  .tbtn.sync[data-s="error"] .dot { background: var(--danger); }
+  .tbtn.sync[data-s="error"] { color: var(--danger); }
+
   /* view tabs */
   .tabs { display: inline-flex; background: var(--surface-2); border-radius: 9px; padding: 3px; margin-right: 6px; }
   .tab { border: 0; background: transparent; padding: 4px 12px; border-radius: 7px; font-size: 13px; font-weight: 500; color: var(--muted); }
@@ -225,6 +233,7 @@
       <button class="tab" data-view="weeks" role="tab">Weeks</button>
       <button class="tab" data-view="topics" role="tab">Topics</button>
     </div>
+    <button class="tbtn sync" id="btnSync" title="Google Drive sync"><span class="dot"></span><span class="sync-label">Sync off</span></button>
     <button class="tbtn" id="btnHistory">History</button>
     <button class="tbtn" id="btnExport">Export</button>
     <button class="tbtn" id="btnImport">Import</button>
@@ -248,8 +257,14 @@
     return { version: 1, cards: [] };
   }
   let state = load();
-  function save() {
+  // writeLocal keeps the device copy; save() also marks a change and queues a cloud upload.
+  function writeLocal() {
     try { localStorage.setItem(KEY, JSON.stringify(state)); } catch (e) {}
+  }
+  function save() {
+    state.updatedAt = Date.now();
+    writeLocal();
+    if (typeof schedulePush === 'function') schedulePush(800);
   }
   const uid = () => Math.random().toString(36).slice(2, 10) + Date.now().toString(36).slice(-4);
 
@@ -814,6 +829,129 @@
   setInterval(() => { if (iso(mondayOf(new Date())) !== weekKeyShown && !document.activeElement.matches('input')) render(); }, 60000);
   document.addEventListener('visibilitychange', () => { if (!document.hidden && iso(mondayOf(new Date())) !== weekKeyShown) render(); });
   window.addEventListener('storage', e => { if (e.key === KEY) { state = load(); render(); } });
+
+  // ---------- Google Drive sync (via the user's own Apps Script web app) ----------
+  // The script URL and its secret key live only in this browser (never in the public repo).
+  // A device connects once by opening the page with #sync=<url>|<key>, or via the Sync button.
+  const SYNC_KEY = 'weekly-planner-sync';
+  let sync = (() => { try { const s = JSON.parse(localStorage.getItem(SYNC_KEY) || 'null'); return s && s.url && s.key ? s : null; } catch (e) { return null; } })();
+  let dirty = false, pushing = false, pushTimer = 0;
+
+  function setStatus(s, detail) {
+    const b = $('#btnSync');
+    b.dataset.s = s;
+    $('.sync-label', b).textContent = { off: 'Sync off', saving: 'Saving…', synced: 'Synced', error: 'Sync error', loading: 'Loading…' }[s] || s;
+    b.title = detail || (s === 'off' ? 'Connect Google Drive sync' : 'Synced with Google Drive');
+  }
+  const isEditing = () => { const a = document.activeElement; return !!(a && a.closest && a.closest('#main') && a.matches('input, select')); };
+  const hasCards = d => d && Array.isArray(d.cards) && d.cards.length > 0;
+
+  async function api(method, body) {
+    const url = method === 'GET' ? `${sync.url}?key=${encodeURIComponent(sync.key)}&t=${Date.now()}` : sync.url;
+    const opt = method === 'GET' ? {} : {
+      method: 'POST',
+      headers: { 'Content-Type': 'text/plain;charset=utf-8' }, // simple request: no CORS preflight
+      body: JSON.stringify({ key: sync.key, data: body }),
+    };
+    const r = await fetch(url, opt);
+    const j = await r.json();
+    if (!j.ok) throw new Error(j.error || 'Sync failed');
+    return j;
+  }
+
+  function schedulePush(delay) {
+    if (!sync) return;
+    dirty = true;
+    setStatus('saving');
+    clearTimeout(pushTimer);
+    pushTimer = setTimeout(push, delay);
+  }
+  async function push() {
+    pushTimer = 0;
+    if (!sync) return;
+    if (pushing) return; // the running push re-schedules when it finishes
+    pushing = true; dirty = false;
+    try {
+      const j = await api('POST', state);
+      if (j.stale && j.data && Array.isArray(j.data.cards)) { state = j.data; writeLocal(); if (!isEditing()) render(); }
+      if (!dirty) setStatus('synced', `Saved to Google Drive at ${new Date().toLocaleTimeString()}`);
+    } catch (e) {
+      dirty = true;
+      setStatus('error', `Could not save to Google Drive (${e.message}). Retrying…`);
+      clearTimeout(pushTimer); pushTimer = setTimeout(push, 15000);
+    } finally {
+      pushing = false;
+      if (dirty && !pushTimer) { pushTimer = setTimeout(push, 800); }
+    }
+  }
+  async function pull() {
+    if (!sync || dirty || pushing) return;
+    try {
+      const j = await api('GET');
+      const remote = j.data;
+      if (dirty || pushing) return; // user changed something while we were fetching
+      if (hasCards(remote) || (remote && remote.updatedAt)) {
+        if ((remote.updatedAt || 0) > (state.updatedAt || 0)) {
+          if (isEditing()) return; // don't redraw under the cursor; next pull picks it up
+          state = remote; writeLocal(); render();
+        } else if ((state.updatedAt || 0) > (remote.updatedAt || 0)) {
+          schedulePush(0); return;
+        }
+      } else if (hasCards(state)) { schedulePush(0); return; }
+      setStatus('synced');
+    } catch (e) {
+      setStatus('error', `Could not reach Google Drive (${e.message}).`);
+    }
+  }
+
+  async function connect(url, key) {
+    sync = { url: url.trim(), key: key.trim() };
+    setStatus('loading');
+    let remote;
+    try { remote = (await api('GET')).data; }
+    catch (e) { sync = null; setStatus('off'); alert(`Could not connect: ${e.message}`); return; }
+    try { localStorage.setItem(SYNC_KEY, JSON.stringify(sync)); } catch (e) {}
+    if (hasCards(remote) && hasCards(state) && JSON.stringify(remote.cards) !== JSON.stringify(state.cards)) {
+      if (confirm('Google Drive already has planner data.\n\nOK = load the Drive data on this device\nCancel = upload this device\'s data to Drive')) {
+        state = remote; writeLocal(); render(); setStatus('synced');
+      } else { save(); }
+    } else if (hasCards(remote)) {
+      state = remote; writeLocal(); render(); setStatus('synced');
+    } else {
+      if (hasCards(state)) save(); else setStatus('synced');
+    }
+  }
+
+  $('#btnSync').addEventListener('click', () => {
+    if (sync) {
+      if (confirm('This device syncs with Google Drive.\n\nDisconnect this device? (Your data stays in Drive and on this device.)')) {
+        sync = null; try { localStorage.removeItem(SYNC_KEY); } catch (e) {}
+        clearTimeout(pushTimer); dirty = false; setStatus('off');
+      }
+      return;
+    }
+    const url = prompt('Paste the Google Apps Script web app URL:');
+    if (!url) return;
+    const key = prompt('Paste the sync key:');
+    if (!key) return;
+    connect(url, key);
+  });
+
+  // connect link: #sync=<url>|<key>
+  (() => {
+    const m = location.hash.match(/^#sync=(.+)$/);
+    if (!m) return;
+    history.replaceState(null, '', location.pathname + location.search);
+    const [url, key] = decodeURIComponent(m[1]).split('|');
+    if (url && key) connect(url, key);
+  })();
+
+  setStatus(sync ? 'loading' : 'off');
+  if (sync) pull();
+  setInterval(() => { if (!document.hidden) pull(); }, 30000);
+  document.addEventListener('visibilitychange', () => { if (!document.hidden) pull(); });
+  window.addEventListener('focus', () => pull());
+  window.addEventListener('beforeunload', e => { if (sync && (dirty || pushing)) { push(); e.preventDefault(); e.returnValue = ''; } });
 
   render();
 })();
