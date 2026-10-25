@@ -132,8 +132,16 @@
   }
   .item-text {
     flex: 1; min-width: 0; border: 0; background: transparent; outline: none; padding: 2px 0;
-    font-size: 13.5px;
+    font: inherit; font-size: 13.5px; line-height: 18px; color: inherit;
+    resize: none; overflow: hidden; display: block; height: 22px;
+    white-space: pre-wrap; overflow-wrap: anywhere; word-break: break-word;
   }
+  /* long to-dos wrap: show at most two lines unless you're editing it */
+  .item-text:not(:focus) { max-height: 40px; }
+  ul.items li { align-items: flex-start; }
+  ul.items li > input[type=checkbox] { margin-top: 3px; }
+  ul.items li > .handle { margin-top: 1px; }
+  ul.items li > .due, ul.items li > .del-item { margin-top: 1px; }
   .item-text::placeholder { color: var(--muted); opacity: .6; }
   li.done .item-text { color: var(--muted); text-decoration: line-through; }
   .add-item {
@@ -515,7 +523,7 @@
     const li = document.createElement('li');
     li.dataset.id = it.id;
     li.classList.toggle('done', it.done);
-    li.innerHTML = `<span class="handle" title="Drag to move" aria-hidden="true">⋮⋮</span><input type="checkbox" aria-label="Done"><input class="item-text" placeholder="To-do" spellcheck="false"><select class="due" title="Due day (optional)" aria-label="Due day"><option value="">–</option>${DAYS.map(d => `<option>${d}</option>`).join('')}</select><button class="del-item" title="Delete item" aria-label="Delete item">×</button>`;
+    li.innerHTML = `<span class="handle" title="Drag to move" aria-hidden="true">⋮⋮</span><input type="checkbox" aria-label="Done"><textarea class="item-text" rows="1" placeholder="To-do" spellcheck="false"></textarea><select class="due" title="Due day (optional)" aria-label="Due day"><option value="">–</option>${DAYS.map(d => `<option>${d}</option>`).join('')}</select><button class="del-item" title="Delete item" aria-label="Delete item">×</button>`;
     const handle = $('.handle', li), cb = $('input[type=checkbox]', li), tx = $('.item-text', li), sel = $('.due', li);
     $('.del-item', li).addEventListener('click', () => {
       const oc = owner();
@@ -533,11 +541,16 @@
       it.done = cb.checked; li.classList.toggle('done', it.done); save(); paintDue(sel, li); refreshProgress();
     });
     sel.addEventListener('change', () => { it.due = sel.value; save(); paintDue(sel, li); });
-    tx.addEventListener('input', () => { it.text = tx.value; save(); refreshProgress(); });
+    tx.addEventListener('input', () => {
+      if (/[\r\n]/.test(tx.value)) { const p = tx.selectionStart; tx.value = tx.value.replace(/[\r\n]+/g, ' '); tx.setSelectionRange(p, p); }
+      it.text = tx.value; fitText(tx); save(); refreshProgress();
+    });
+    tx.addEventListener('focus', () => fitText(tx));
+    tx.addEventListener('blur', () => { fitText(tx); tx.scrollTop = 0; });
     tx.addEventListener('keydown', e => {
       const oc = owner();
       if (!oc) return;
-      if (e.key === 'Enter') {
+      if (e.key === 'Enter' && !e.isComposing) {
         e.preventDefault();
         const idx = oc.items.indexOf(it);
         const n = { id: uid(), text: '', done: false, due: '' };
@@ -553,15 +566,29 @@
         if (prev) { const p = $('.item-text', prev); p.focus(); p.setSelectionRange(p.value.length, p.value.length); }
         else if (cardNow) $('.title', cardNow).focus();
       } else if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
+        // inside a wrapped item, arrows move between its lines; at the ends they jump items
+        const atEdge = e.key === 'ArrowDown' ? tx.selectionStart === tx.value.length : tx.selectionStart === 0;
         const sib = e.key === 'ArrowDown' ? li.nextElementSibling : li.previousElementSibling;
-        if (sib) { e.preventDefault(); $('.item-text', sib).focus(); }
+        if (sib && atEdge) { e.preventDefault(); $('.item-text', sib).focus(); }
       }
     });
     handle.addEventListener('pointerdown', e => startDrag(e, li));
     return li;
   }
   // paint after the li is attached (cardOfItem needs state, not DOM, so this is safe immediately)
-  function paintDueLater(sel, li) { queueMicrotask(() => paintDue(sel, li)); }
+  function paintDueLater(sel, li) { queueMicrotask(() => { paintDue(sel, li); fitText($('.item-text', li)); }); }
+
+  // grow a to-do's text box to fit its wrapped lines (CSS caps it at two lines when not editing)
+  function fitText(t) {
+    if (!t || !t.isConnected) return;
+    t.style.height = 'auto';
+    t.style.height = Math.max(22, t.scrollHeight) + 'px';
+  }
+  let fitRaf = 0;
+  window.addEventListener('resize', () => {
+    cancelAnimationFrame(fitRaf);
+    fitRaf = requestAnimationFrame(() => document.querySelectorAll('.item-text').forEach(fitText));
+  });
 
   // ---------- drag to reorder / move between cards ----------
   let drag = null;
@@ -826,7 +853,7 @@
   });
 
   // ---------- auto roll over on Monday / sync tabs ----------
-  setInterval(() => { if (iso(mondayOf(new Date())) !== weekKeyShown && !document.activeElement.matches('input')) render(); }, 60000);
+  setInterval(() => { if (iso(mondayOf(new Date())) !== weekKeyShown && !document.activeElement.matches('input, textarea, select')) render(); }, 60000);
   document.addEventListener('visibilitychange', () => { if (!document.hidden && iso(mondayOf(new Date())) !== weekKeyShown) render(); });
   window.addEventListener('storage', e => { if (e.key === KEY) { state = load(); render(); } });
 
@@ -843,7 +870,7 @@
     $('.sync-label', b).textContent = { off: 'Sync off', saving: 'Saving…', synced: 'Synced', error: 'Sync error', loading: 'Loading…' }[s] || s;
     b.title = detail || (s === 'off' ? 'Connect Google Drive sync' : 'Synced with Google Drive');
   }
-  const isEditing = () => { const a = document.activeElement; return !!(a && a.closest && a.closest('#main') && a.matches('input, select')); };
+  const isEditing = () => { const a = document.activeElement; return !!(a && a.closest && a.closest('#main') && a.matches('input, textarea, select')); };
   const hasCards = d => d && Array.isArray(d.cards) && d.cards.length > 0;
 
   async function api(method, body) {
