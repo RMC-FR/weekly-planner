@@ -137,7 +137,18 @@
     white-space: pre-wrap; overflow-wrap: anywhere; word-break: break-word;
   }
   /* long to-dos wrap: show at most two lines unless you're editing it */
-  .item-text:not(:focus) { max-height: 40px; }
+  .item-text:not(.editing) { max-height: 40px; }
+  /* more than two lines: fade the end of line two so it reads as "continues…" */
+  .item-text.clipped:not(.editing) {
+    -webkit-mask-image: linear-gradient(#000, #000), linear-gradient(to right, #000 62%, transparent 96%);
+    -webkit-mask-size: 100% 20px, 100% 20px;
+    -webkit-mask-position: top, bottom;
+    -webkit-mask-repeat: no-repeat;
+    mask-image: linear-gradient(#000, #000), linear-gradient(to right, #000 62%, transparent 96%);
+    mask-size: 100% 20px, 100% 20px;
+    mask-position: top, bottom;
+    mask-repeat: no-repeat;
+  }
   ul.items li { align-items: flex-start; }
   ul.items li > input[type=checkbox] { margin-top: 3px; }
   ul.items li > .handle { margin-top: 1px; }
@@ -545,8 +556,8 @@
       if (/[\r\n]/.test(tx.value)) { const p = tx.selectionStart; tx.value = tx.value.replace(/[\r\n]+/g, ' '); tx.setSelectionRange(p, p); }
       it.text = tx.value; fitText(tx); save(); refreshProgress();
     });
-    tx.addEventListener('focus', () => fitText(tx));
-    tx.addEventListener('blur', () => { fitText(tx); tx.scrollTop = 0; });
+    tx.addEventListener('focus', () => { tx.classList.add('editing'); fitText(tx); });
+    tx.addEventListener('blur', () => { tx.classList.remove('editing'); fitText(tx); tx.scrollTop = 0; });
     tx.addEventListener('keydown', e => {
       const oc = owner();
       if (!oc) return;
@@ -582,7 +593,9 @@
   function fitText(t) {
     if (!t || !t.isConnected) return;
     t.style.height = 'auto';
-    t.style.height = Math.max(22, t.scrollHeight) + 'px';
+    const h = Math.max(22, t.scrollHeight);
+    t.style.height = h + 'px';
+    t.classList.toggle('clipped', h > 44);
   }
   let fitRaf = 0;
   window.addEventListener('resize', () => {
